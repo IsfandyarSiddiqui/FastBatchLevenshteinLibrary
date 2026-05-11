@@ -4,7 +4,6 @@ using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Linq;
 
 
 /// <summary>
@@ -88,9 +87,9 @@ public sealed class FBLEngine
         if (normalizedQuery.Length is 0 or > MaxKeyLength) return 0;
 
         int written = 0;
-        if (normalizedQuery.Length < 8 + maxEdits)
+        if (normalizedQuery.Length < 8 + 1 + maxEdits)
             SearchBucket(_bucket8, normalizedQuery, results, options, ref written);
-        if (normalizedQuery.Length < 16 + maxEdits && normalizedQuery.Length > 8 - maxEdits)
+        if (normalizedQuery.Length < 16 + 1 + maxEdits && normalizedQuery.Length > 8  - maxEdits)
             SearchBucket(_bucket16, normalizedQuery, results, options, ref written);
         if (normalizedQuery.Length > 16 - maxEdits)
             SearchBucket(_bucket32, normalizedQuery, results, options, ref written);

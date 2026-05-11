@@ -3,5 +3,6 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Project Path="FastBatchLevenshtein.Tests/FastBatchLevenshtein.Tests.csproj" Id="2732ae3e-ac7d-4278-a62e-1a2518e397a9" />
   <Project Path="FastBatchLevenshtein/FastBatchLevenshtein.csproj" />
 </Solution>
