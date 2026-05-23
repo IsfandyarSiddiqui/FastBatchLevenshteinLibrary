@@ -199,7 +199,7 @@ public class UnitTest1
         var engine = new FBLEngine([Bytes("alpha"), Bytes("alpha"), Bytes("alpha")], ids: [10, 20, 30]);
         Span<MatchResult> results = stackalloc MatchResult[1];
 
-        int count = engine.Search(Bytes("alpha").Span, results, new SearchOptions(MaxEdits: 0, MinRatio: 1.0f));
+        int count = engine.Search("alpha", results, new SearchOptions(MaxEdits: 0, MinRatio: 1.0f));
 
         Assert.Equal(1, count);
         Assert.Equal(10, results[0].CandidateId);
@@ -211,7 +211,7 @@ public class UnitTest1
         var engine = new FBLEngine([Bytes("alpha")]);
         Span<MatchResult> results = Span<MatchResult>.Empty;
 
-        int count = engine.Search(Bytes("alpha").Span, results, new SearchOptions(MaxEdits: 0, MinRatio: 1.0f));
+        int count = engine.Search("alpha", results, new SearchOptions(MaxEdits: 0, MinRatio: 1.0f));
 
         Assert.Equal(0, count);
     }
@@ -234,9 +234,8 @@ public class UnitTest1
     {
         var engine = new FBLEngine([Bytes("alpha")]);
         MatchResult[] results = new MatchResult[4];
-        ReadOnlyMemory<byte> query = Bytes("alpha");
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Search(query.Span, results, new SearchOptions(maxEdits, minRatio)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Search("alpha", results, new SearchOptions(maxEdits, minRatio)));
     }
 
     [Fact]
@@ -244,9 +243,8 @@ public class UnitTest1
     {
         var engine = new FBLEngine([Bytes("alpha")]);
         MatchResult[] results = new MatchResult[4];
-        ReadOnlyMemory<byte> query = Bytes("alpha");
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Search(query.Span, results, new SearchOptions(MaxEdits: 1, MinRatio: float.NaN)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Search("alpha", results, new SearchOptions(MaxEdits: 1, MinRatio: float.NaN)));
     }
 
     private static MatchResult[] Search(FBLEngine engine, string query, SearchOptions options)
@@ -254,14 +252,14 @@ public class UnitTest1
         Span<byte> buffer = stackalloc byte[FBLEngine.MaxKeyLength];
         int length = FBLHelper.Normalize(query.AsSpan(), buffer);
         Span<MatchResult> results = stackalloc MatchResult[32];
-        int count = engine.Search(buffer[..length], results, options);
+        int count = engine.Search(query, results, options);
         return results[..count].ToArray();
     }
 
     private static MatchResult[] SearchRaw(FBLEngine engine, ReadOnlyMemory<byte> query, SearchOptions options)
     {
         Span<MatchResult> results = stackalloc MatchResult[32];
-        int count = engine.Search(query.Span, results, options);
+        int count = engine.Search(query.ToString(), results, options);
         return results[..count].ToArray();
     }
 

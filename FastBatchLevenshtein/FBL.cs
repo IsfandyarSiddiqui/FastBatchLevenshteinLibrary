@@ -1,13 +1,15 @@
 ﻿namespace FastBatchLevenshtein;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 
 
 /// <summary>
-/// A allocation-free fuzzy matching engine optimized for batch searching over normalized keys using a bounded Levenshtein distance
+/// An allocation-free fuzzy matching engine optimized for batch searching over normalized keys using a bounded Levenshtein distance
 /// </summary>
 public sealed class FBLEngine
 {
@@ -23,6 +25,22 @@ public sealed class FBLEngine
     private readonly Bucket _bucket8;
     private readonly Bucket _bucket16;
     private readonly Bucket _bucket32;
+
+
+    /// <summary>
+    /// Initializes a new <see cref="FBLEngine"/> from pre-normalized keys and optional ids.
+    /// </summary>
+    /// <param name="records">The normalized keys (ASCII letters and digits only).</param>
+    /// <param name="ids">
+    /// Optional ids associated with <paramref name="records"/>. If <see langword="null"/>,
+    /// ids are assigned sequentially (0..N-1).
+    /// </param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="records"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="ids"/> is provided with a different length.</exception>
+    public FBLEngine(IReadOnlyList<string> records, int[]? ids = null)
+    : this(FBLHelper.NormalizeNames(records), ids)
+    {
+    }
 
     /// <summary>
     /// Initializes a new <see cref="FBLEngine"/> from pre-normalized records.
@@ -47,20 +65,21 @@ public sealed class FBLEngine
     {
         ArgumentNullException.ThrowIfNull(normalizedRecords);
 
-        if (ids is null)
-        {
-            ids = new int[normalizedRecords.Length];
-            for (int i = 0; i < ids.Length; i++)
-                ids[i] = i;
-        }
-
-        if (normalizedRecords.Length != ids.Length)
+        if (ids is not null && normalizedRecords.Length != ids.Length)
             throw new ArgumentException("records and ids must have the same length.", nameof(ids));
 
         NormalizedRecord[] records = new NormalizedRecord[normalizedRecords.Length];
 
-        for (int i = 0; i < normalizedRecords.Length; i++)
-            records[i] = new NormalizedRecord(ids[i], normalizedRecords[i]);
+        if (ids is null)
+        {
+            for (int i = 0; i < normalizedRecords.Length; i++)
+                records[i] = new NormalizedRecord(i, normalizedRecords[i]);
+        }
+        else
+        {
+            for (int i = 0; i < normalizedRecords.Length; i++)
+                records[i] = new NormalizedRecord(ids[i], normalizedRecords[i]);
+        }
 
         Build(records, out _bucket8, out _bucket16, out _bucket32);
     }
@@ -68,7 +87,7 @@ public sealed class FBLEngine
     /// <summary>
     /// Searches for candidates within a bounded Levenshtein edit distance.
     /// </summary>
-    /// <param name="normalizedQuery">The query key, already normalized (ASCII letters/digits only).</param>
+    /// <param name="query">The query key, already normalized (ASCII letters/digits only).</param>
     /// <param name="results">Destination buffer that receives matches.</param>
     /// <param name="options">Search parameters such as maximum edits and minimum score.</param>
     /// <returns>The number of results written to <paramref name="results"/>.</returns>
@@ -79,19 +98,21 @@ public sealed class FBLEngine
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <paramref name="options"/> contains invalid values.
     /// </exception>
-    public int Search(ReadOnlySpan<byte> normalizedQuery, Span<MatchResult> results, SearchOptions options = default)
+    public int Search(string query, Span<MatchResult> results, SearchOptions options = default)
     {
         int maxEdits = options.MaxEdits;
+        Span<byte> normalizedQuery = stackalloc byte[MaxKeyLength];
+        int len = FBLHelper.Normalize(query.AsSpan(), normalizedQuery);
 
         ValidateOptions(options);
-        if (normalizedQuery.Length is 0 or > MaxKeyLength) return 0;
+        if (len is 0 or > MaxKeyLength) return 0;
 
         int written = 0;
-        if (normalizedQuery.Length < 8 + 1 + maxEdits)
+        if (len < 8 + 1 + maxEdits)
             SearchBucket(_bucket8, normalizedQuery, results, options, ref written);
-        if (normalizedQuery.Length < 16 + 1 + maxEdits && normalizedQuery.Length > 8  - maxEdits)
+        if (len < 16 + 1 + maxEdits && len > 8  - maxEdits)
             SearchBucket(_bucket16, normalizedQuery, results, options, ref written);
-        if (normalizedQuery.Length > 16 - maxEdits)
+        if (len > 16 - maxEdits)
             SearchBucket(_bucket32, normalizedQuery, results, options, ref written);
 
         return written;
@@ -108,7 +129,7 @@ public sealed class FBLEngine
         int queryLength = query.Length;
         int width = bucket.Width;
         byte[] data = bucket.Data;
-        byte[] lengths = bucket.Lengths;
+        int[] lengths = bucket.Lengths;
         int[] ids = bucket.Ids;
 
         for (int i = 0; i < bucket.Count; i++)
@@ -239,7 +260,7 @@ public sealed class FBLEngine
         public readonly int Width;
         public readonly int Count;
         public readonly byte[] Data;
-        public readonly byte[] Lengths;
+        public readonly int[] Lengths;
         public readonly int[] Ids;
 
         public Bucket(int width, int count)
@@ -247,9 +268,9 @@ public sealed class FBLEngine
             Width = width;
             Count = count;
             Data = GC.AllocateUninitializedArray<byte>(width * count);
-            Lengths = GC.AllocateUninitializedArray<byte>(count);
+            Lengths = GC.AllocateUninitializedArray<int>(count);
             Ids = GC.AllocateUninitializedArray<int>(count);
-            Array.Clear(Data);
+            //Array.Clear(Data);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -406,6 +427,20 @@ public static class FBLHelper
 
         destination[written++] = b;
         return true;
+    }
+
+    public static ReadOnlyMemory<byte>[] NormalizeNames(IReadOnlyList<string> names)
+    {
+        ReadOnlyMemory<byte>[] normalizedRecords = new ReadOnlyMemory<byte>[names.Count];
+        Span<byte> buffer = stackalloc byte[32];
+
+        for (int i = 0; i < names.Count; i++)
+        {
+            int len = Normalize(names[i].AsSpan(), buffer);
+
+            normalizedRecords[i] = buffer[..len].ToArray();
+        }
+        return normalizedRecords;
     }
 }
 
